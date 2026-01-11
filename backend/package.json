@@ -1,0 +1,30 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Minimal production-ready Node.js backend skeleton",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "ts-node --transpile-only src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "node",
+    "typescript",
+    "infra"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "@upstash/redis": "^1.36.1",
+    "dotenv": "^16.4.7",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.16.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
