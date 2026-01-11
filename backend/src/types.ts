@@ -24,6 +24,24 @@ export interface EventInsert {
   payload: unknown;
 }
 
+export type EventRecord = EventInsert & {
+  id: number;
+  createdAt: Date;
+};
+
+export interface ActionInsert {
+  eventId: number;
+  actionType: string;
+  creatorId: string;
+  patronId?: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ActionDecision {
+  actionType: string;
+  metadata: Record<string, unknown>;
+}
+
 export function requireEnv(key: RequiredEnvKey): string {
   const value = process.env[key];
 

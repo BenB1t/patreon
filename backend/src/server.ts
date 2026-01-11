@@ -3,12 +3,15 @@ import { createServer as createHttpServer, IncomingMessage, Server, ServerRespon
 import { URL } from "node:url";
 import { z } from "zod";
 
+import { insertAction } from "./actionsRepo";
+import { evaluateEvent } from "./decisionEngine";
 import pool from "./db";
 import { insertEvent } from "./eventsRepo";
 import redisClient from "./redis";
-import { ErrorResponse, HealthResponse, JsonResponse } from "./types";
+import { ErrorResponse, EventRecord, HealthResponse, JsonResponse } from "./types";
 
 const HEALTH_KEY_TTL_SECONDS = 60;
+const ACTION_COOLDOWN_SECONDS = 7 * 24 * 60 * 60;
 const eventSchema = z.object({
   type: z.string().min(1),
   source: z.string().min(1),
@@ -79,12 +82,58 @@ async function handleEventIngest(req: IncomingMessage, res: ServerResponse): Pro
       return;
     }
 
-    await insertEvent(validationResult.data);
+    const persistedEvent = await insertEvent(validationResult.data);
+    await processEventDecision(persistedEvent);
     sendJson(res, 202, { status: "ok" });
   } catch (error) {
     console.error("Event ingestion failed", error);
     sendJson(res, 500, { status: "error", message: "Unable to ingest event" });
   }
+}
+
+async function processEventDecision(event: EventRecord): Promise<void> {
+  const decision = evaluateEvent(event);
+  if (!decision) {
+    return;
+  }
+
+  const { actionType, metadata } = decision;
+  const patronId = event.patronId;
+
+  if (patronId) {
+    const cooldownKey = buildCooldownKey(event.creatorId, patronId, actionType);
+    const cooldownResult = await redisClient.set(cooldownKey, "1", {
+      ex: ACTION_COOLDOWN_SECONDS,
+      nx: true,
+    });
+
+    if (cooldownResult !== "OK") {
+      await insertAction({
+        eventId: event.id,
+        actionType: "suppressed",
+        creatorId: event.creatorId,
+        patronId,
+        metadata: {
+          reason: "cooldown_active",
+          suppressedActionType: actionType,
+          cooldownKey,
+        },
+      });
+      return;
+    }
+  }
+
+  await insertAction({
+    eventId: event.id,
+    actionType,
+    creatorId: event.creatorId,
+    patronId,
+    metadata,
+  });
+}
+
+function buildCooldownKey(creatorId: string, patronId: string, actionType: string): string {
+  return `cooldown:${creatorId}:${patronId}:${actionType}`;
 }
 
 async function readRequestBody(req: IncomingMessage): Promise<string> {

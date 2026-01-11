@@ -9,10 +9,13 @@ const node_buffer_1 = require("node:buffer");
 const node_http_1 = require("node:http");
 const node_url_1 = require("node:url");
 const zod_1 = require("zod");
+const actionsRepo_1 = require("./actionsRepo");
+const decisionEngine_1 = require("./decisionEngine");
 const db_1 = __importDefault(require("./db"));
 const eventsRepo_1 = require("./eventsRepo");
 const redis_1 = __importDefault(require("./redis"));
 const HEALTH_KEY_TTL_SECONDS = 60;
+const ACTION_COOLDOWN_SECONDS = 7 * 24 * 60 * 60;
 const eventSchema = zod_1.z.object({
     type: zod_1.z.string().min(1),
     source: zod_1.z.string().min(1),
@@ -76,13 +79,53 @@ async function handleEventIngest(req, res) {
             sendJson(res, 400, { status: "error", message: "Invalid event payload" });
             return;
         }
-        await (0, eventsRepo_1.insertEvent)(validationResult.data);
+        const persistedEvent = await (0, eventsRepo_1.insertEvent)(validationResult.data);
+        await processEventDecision(persistedEvent);
         sendJson(res, 202, { status: "ok" });
     }
     catch (error) {
         console.error("Event ingestion failed", error);
         sendJson(res, 500, { status: "error", message: "Unable to ingest event" });
     }
+}
+async function processEventDecision(event) {
+    const decision = (0, decisionEngine_1.evaluateEvent)(event);
+    if (!decision) {
+        return;
+    }
+    const { actionType, metadata } = decision;
+    const patronId = event.patronId;
+    if (patronId) {
+        const cooldownKey = buildCooldownKey(event.creatorId, patronId, actionType);
+        const cooldownResult = await redis_1.default.set(cooldownKey, "1", {
+            ex: ACTION_COOLDOWN_SECONDS,
+            nx: true,
+        });
+        if (cooldownResult !== "OK") {
+            await (0, actionsRepo_1.insertAction)({
+                eventId: event.id,
+                actionType: "suppressed",
+                creatorId: event.creatorId,
+                patronId,
+                metadata: {
+                    reason: "cooldown_active",
+                    suppressedActionType: actionType,
+                    cooldownKey,
+                },
+            });
+            return;
+        }
+    }
+    await (0, actionsRepo_1.insertAction)({
+        eventId: event.id,
+        actionType,
+        creatorId: event.creatorId,
+        patronId,
+        metadata,
+    });
+}
+function buildCooldownKey(creatorId, patronId, actionType) {
+    return `cooldown:${creatorId}:${patronId}:${actionType}`;
 }
 async function readRequestBody(req) {
     return await new Promise((resolve, reject) => {
