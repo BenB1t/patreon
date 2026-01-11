@@ -16,6 +16,14 @@ export interface ErrorResponse {
 
 export type JsonResponse = HealthResponse | ErrorResponse;
 
+export interface EventInsert {
+  type: string;
+  source: string;
+  creatorId: string;
+  patronId?: string;
+  payload: unknown;
+}
+
 export function requireEnv(key: RequiredEnvKey): string {
   const value = process.env[key];
 

@@ -8,9 +8,20 @@ exports.startServer = startServer;
 const node_buffer_1 = require("node:buffer");
 const node_http_1 = require("node:http");
 const node_url_1 = require("node:url");
+const zod_1 = require("zod");
 const db_1 = __importDefault(require("./db"));
+const eventsRepo_1 = require("./eventsRepo");
 const redis_1 = __importDefault(require("./redis"));
 const HEALTH_KEY_TTL_SECONDS = 60;
+const eventSchema = zod_1.z.object({
+    type: zod_1.z.string().min(1),
+    source: zod_1.z.string().min(1),
+    creatorId: zod_1.z.string().min(1),
+    patronId: zod_1.z.string().min(1).optional(),
+    payload: zod_1.z.unknown().refine((value) => value !== undefined, {
+        message: "payload is required",
+    }),
+});
 async function handleRequest(req, res) {
     try {
         const method = req.method ?? "GET";
@@ -18,6 +29,10 @@ async function handleRequest(req, res) {
         const url = new node_url_1.URL(rawUrl, "http://localhost");
         if (method === "GET" && url.pathname === "/health") {
             await handleHealth(res);
+            return;
+        }
+        if (method === "POST" && url.pathname === "/events") {
+            await handleEventIngest(req, res);
             return;
         }
         sendJson(res, 404, { status: "error", message: "Not Found" });
@@ -40,6 +55,51 @@ async function handleHealth(res) {
         const payload = { status: "error", message: "Dependency check failed" };
         sendJson(res, 500, payload);
     }
+}
+async function handleEventIngest(req, res) {
+    try {
+        const rawBody = await readRequestBody(req);
+        if (rawBody.length === 0) {
+            sendJson(res, 400, { status: "error", message: "Request body required" });
+            return;
+        }
+        let parsedBody;
+        try {
+            parsedBody = JSON.parse(rawBody);
+        }
+        catch {
+            sendJson(res, 400, { status: "error", message: "Invalid JSON payload" });
+            return;
+        }
+        const validationResult = eventSchema.safeParse(parsedBody);
+        if (!validationResult.success) {
+            sendJson(res, 400, { status: "error", message: "Invalid event payload" });
+            return;
+        }
+        await (0, eventsRepo_1.insertEvent)(validationResult.data);
+        sendJson(res, 202, { status: "ok" });
+    }
+    catch (error) {
+        console.error("Event ingestion failed", error);
+        sendJson(res, 500, { status: "error", message: "Unable to ingest event" });
+    }
+}
+async function readRequestBody(req) {
+    return await new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on("data", (chunk) => {
+            chunks.push(typeof chunk === "string" ? node_buffer_1.Buffer.from(chunk) : chunk);
+        });
+        req.on("end", () => {
+            resolve(node_buffer_1.Buffer.concat(chunks).toString("utf8"));
+        });
+        req.on("error", (error) => {
+            reject(error);
+        });
+        req.on("aborted", () => {
+            reject(new Error("Request aborted"));
+        });
+    });
 }
 function sendJson(res, statusCode, payload) {
     const body = JSON.stringify(payload);
