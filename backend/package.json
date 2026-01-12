@@ -18,13 +18,14 @@
   "type": "commonjs",
   "dependencies": {
     "@upstash/redis": "^1.36.1",
-    "dotenv": "^16.4.7",
+    "dotenv": "^16.6.1",
     "pg": "^8.16.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
     "@types/pg": "^8.16.0",
+    "node-pg-migrate": "^8.0.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   }
