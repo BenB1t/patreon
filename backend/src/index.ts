@@ -1,5 +1,6 @@
 import "dotenv/config";
 
+import { startActionWorker } from "./actionWorker";
 import { startServer } from "./server";
 
 const DEFAULT_PORT = 3000;
@@ -23,6 +24,15 @@ async function bootstrap(): Promise<void> {
   try {
     await startServer(port);
     console.log(`HTTP server listening on port ${port}`);
+    const stopWorker = startActionWorker();
+
+    const shutdown = (): void => {
+      stopWorker();
+      process.exit(0);
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   } catch (error) {
     console.error("Server failed to start", error);
     process.exit(1);

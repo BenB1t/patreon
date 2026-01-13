@@ -47,9 +47,41 @@ export interface ActionDecision {
   metadata: Record<string, unknown>;
 }
 
-export interface ActionExecutor {
+export type ActionStatus = "pending" | "success" | "failed";
+
+export interface EmailActionPayload {
+  email: string;
+  subject: string;
+  body: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type ActionPayload = EmailActionPayload;
+
+export interface QueuedAction {
+  id: number;
+  type: string;
+  payload: ActionPayload;
+  status: ActionStatus;
+  attempts: number;
+  lastError?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ActionQueueInsert {
+  type: string;
+  payload: ActionPayload;
+}
+
+export interface ActionExecutionResult {
+  success: boolean;
+  errorMessage?: string;
+}
+
+export interface ActionQueueExecutor {
   actionType: string;
-  execute(action: ActionRecord): Promise<void>;
+  execute(action: QueuedAction): Promise<ActionExecutionResult>;
 }
 
 export function requireEnv(key: RequiredEnvKey): string {

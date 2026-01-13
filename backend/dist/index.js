@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
+const actionWorker_1 = require("./actionWorker");
 const server_1 = require("./server");
 const DEFAULT_PORT = 3000;
 function resolvePort(rawValue) {
@@ -18,6 +19,13 @@ async function bootstrap() {
     try {
         await (0, server_1.startServer)(port);
         console.log(`HTTP server listening on port ${port}`);
+        const stopWorker = (0, actionWorker_1.startActionWorker)();
+        const shutdown = () => {
+            stopWorker();
+            process.exit(0);
+        };
+        process.on("SIGINT", shutdown);
+        process.on("SIGTERM", shutdown);
     }
     catch (error) {
         console.error("Server failed to start", error);

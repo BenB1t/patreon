@@ -4,12 +4,12 @@ import { URL } from "node:url";
 import { z } from "zod";
 
 import { insertAction } from "./actionsRepo";
-import { executeAction } from "./actionExecutors";
+import { enqueueAction } from "./actionQueueRepo";
 import { evaluateEvent } from "./decisionEngine";
 import pool from "./db";
 import { insertEvent } from "./eventsRepo";
 import redisClient from "./redis";
-import { ErrorResponse, EventRecord, HealthResponse, JsonResponse } from "./types";
+import { ActionPayload, ErrorResponse, EventRecord, HealthResponse, JsonResponse } from "./types";
 
 const HEALTH_KEY_TTL_SECONDS = 60;
 const ACTION_COOLDOWN_SECONDS = 7 * 24 * 60 * 60;
@@ -109,7 +109,7 @@ async function processEventDecision(event: EventRecord): Promise<void> {
     });
 
     if (cooldownResult !== "OK") {
-      const suppressedAction = await insertAction({
+      await insertAction({
         eventId: event.id,
         actionType: "suppressed",
         creatorId: event.creatorId,
@@ -120,7 +120,6 @@ async function processEventDecision(event: EventRecord): Promise<void> {
           cooldownKey,
         },
       });
-      await executeAction(suppressedAction);
       return;
     }
   }
@@ -132,7 +131,38 @@ async function processEventDecision(event: EventRecord): Promise<void> {
     patronId,
     metadata,
   });
-  await executeAction(persistedAction);
+
+  const payload = buildEmailPayload(event, persistedAction.id, metadata);
+  await enqueueAction({
+    type: "SEND_EMAIL",
+    payload,
+  });
+}
+
+function buildEmailPayload(
+  event: EventRecord,
+  actionId: number,
+  decisionMetadata: Record<string, unknown>
+): ActionPayload {
+  const emailFromMetadata = decisionMetadata["email"];
+  const recipientEmail = typeof emailFromMetadata === "string" && emailFromMetadata.length > 0
+    ? emailFromMetadata
+    : `${event.patronId ?? "patron"}@example.com`;
+
+  const templateName = typeof decisionMetadata["template"] === "string" ? decisionMetadata["template"] : "offer_pause";
+
+  return {
+    email: recipientEmail,
+    subject: "We'd love to keep you around",
+    body: `Hi there! We noticed some activity that suggests you might pause your support. Template: ${templateName}.`,
+    metadata: {
+      actionId,
+      eventId: event.id,
+      creatorId: event.creatorId,
+      patronId: event.patronId,
+      template: templateName,
+    },
+  };
 }
 
 function buildCooldownKey(creatorId: string, patronId: string, actionType: string): string {
