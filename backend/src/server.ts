@@ -4,6 +4,7 @@ import { URL } from "node:url";
 import { z } from "zod";
 
 import { insertAction } from "./actionsRepo";
+import { executeAction } from "./actionExecutors";
 import { evaluateEvent } from "./decisionEngine";
 import pool from "./db";
 import { insertEvent } from "./eventsRepo";
@@ -108,7 +109,7 @@ async function processEventDecision(event: EventRecord): Promise<void> {
     });
 
     if (cooldownResult !== "OK") {
-      await insertAction({
+      const suppressedAction = await insertAction({
         eventId: event.id,
         actionType: "suppressed",
         creatorId: event.creatorId,
@@ -119,17 +120,19 @@ async function processEventDecision(event: EventRecord): Promise<void> {
           cooldownKey,
         },
       });
+      await executeAction(suppressedAction);
       return;
     }
   }
 
-  await insertAction({
+  const persistedAction = await insertAction({
     eventId: event.id,
     actionType,
     creatorId: event.creatorId,
     patronId,
     metadata,
   });
+  await executeAction(persistedAction);
 }
 
 function buildCooldownKey(creatorId: string, patronId: string, actionType: string): string {

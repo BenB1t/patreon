@@ -37,9 +37,19 @@ export interface ActionInsert {
   metadata: Record<string, unknown>;
 }
 
+export interface ActionRecord extends ActionInsert {
+  id: number;
+  createdAt: Date;
+}
+
 export interface ActionDecision {
   actionType: string;
   metadata: Record<string, unknown>;
+}
+
+export interface ActionExecutor {
+  actionType: string;
+  execute(action: ActionRecord): Promise<void>;
 }
 
 export function requireEnv(key: RequiredEnvKey): string {

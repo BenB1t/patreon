@@ -10,6 +10,7 @@ const node_http_1 = require("node:http");
 const node_url_1 = require("node:url");
 const zod_1 = require("zod");
 const actionsRepo_1 = require("./actionsRepo");
+const actionExecutors_1 = require("./actionExecutors");
 const decisionEngine_1 = require("./decisionEngine");
 const db_1 = __importDefault(require("./db"));
 const eventsRepo_1 = require("./eventsRepo");
@@ -102,7 +103,7 @@ async function processEventDecision(event) {
             nx: true,
         });
         if (cooldownResult !== "OK") {
-            await (0, actionsRepo_1.insertAction)({
+            const suppressedAction = await (0, actionsRepo_1.insertAction)({
                 eventId: event.id,
                 actionType: "suppressed",
                 creatorId: event.creatorId,
@@ -113,16 +114,18 @@ async function processEventDecision(event) {
                     cooldownKey,
                 },
             });
+            await (0, actionExecutors_1.executeAction)(suppressedAction);
             return;
         }
     }
-    await (0, actionsRepo_1.insertAction)({
+    const persistedAction = await (0, actionsRepo_1.insertAction)({
         eventId: event.id,
         actionType,
         creatorId: event.creatorId,
         patronId,
         metadata,
     });
+    await (0, actionExecutors_1.executeAction)(persistedAction);
 }
 function buildCooldownKey(creatorId, patronId, actionType) {
     return `cooldown:${creatorId}:${patronId}:${actionType}`;
