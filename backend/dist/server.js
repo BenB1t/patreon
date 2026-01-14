@@ -14,6 +14,7 @@ const actionQueueRepo_1 = require("./actionQueueRepo");
 const decisionEngine_1 = require("./decisionEngine");
 const db_1 = __importDefault(require("./db"));
 const eventsRepo_1 = require("./eventsRepo");
+const retentionEvents_1 = require("./retention/retentionEvents");
 const redis_1 = __importDefault(require("./redis"));
 const HEALTH_KEY_TTL_SECONDS = 60;
 const ACTION_COOLDOWN_SECONDS = 7 * 24 * 60 * 60;
@@ -26,6 +27,10 @@ const eventSchema = zod_1.z.object({
         message: "payload is required",
     }),
 });
+const paymentFailedWebhookSchema = zod_1.z.object({
+    patronEmail: zod_1.z.string().email(),
+    creatorName: zod_1.z.string().min(1),
+});
 async function handleRequest(req, res) {
     try {
         const method = req.method ?? "GET";
@@ -37,6 +42,10 @@ async function handleRequest(req, res) {
         }
         if (method === "POST" && url.pathname === "/events") {
             await handleEventIngest(req, res);
+            return;
+        }
+        if (method === "POST" && url.pathname === "/webhooks/payment-failed") {
+            await handlePaymentFailedWebhook(req, res);
             return;
         }
         sendJson(res, 404, { status: "error", message: "Not Found" });
@@ -87,6 +96,39 @@ async function handleEventIngest(req, res) {
     catch (error) {
         console.error("Event ingestion failed", error);
         sendJson(res, 500, { status: "error", message: "Unable to ingest event" });
+    }
+}
+async function handlePaymentFailedWebhook(req, res) {
+    try {
+        const rawBody = await readRequestBody(req);
+        if (rawBody.length === 0) {
+            sendJson(res, 400, { status: "error", message: "Request body required" });
+            return;
+        }
+        let parsedBody;
+        try {
+            parsedBody = JSON.parse(rawBody);
+        }
+        catch {
+            sendJson(res, 400, { status: "error", message: "Invalid JSON payload" });
+            return;
+        }
+        const validationResult = paymentFailedWebhookSchema.safeParse(parsedBody);
+        if (!validationResult.success) {
+            sendJson(res, 400, { status: "error", message: "Invalid event payload" });
+            return;
+        }
+        const { patronEmail, creatorName } = validationResult.data;
+        await (0, retentionEvents_1.handleRetentionEvent)({
+            type: retentionEvents_1.RetentionEventType.PAYMENT_FAILED,
+            patronEmail,
+            creatorName,
+        });
+        sendJson(res, 200, { status: "ok" });
+    }
+    catch (error) {
+        console.error("Payment failed webhook handling error", error);
+        sendJson(res, 500, { status: "error", message: "Unable to process webhook" });
     }
 }
 async function processEventDecision(event) {

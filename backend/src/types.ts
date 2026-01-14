@@ -1,7 +1,9 @@
 export type RequiredEnvKey =
   | "UPSTASH_REDIS_REST_URL"
   | "UPSTASH_REDIS_REST_TOKEN"
-  | "DATABASE_URL";
+  | "DATABASE_URL"
+  | "SENDGRID_API_KEY"
+  | "EMAIL_FROM";
 
 export type OptionalEnvKey = "PORT";
 
