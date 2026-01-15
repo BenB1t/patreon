@@ -1,9 +1,10 @@
-import { fetchPendingActions, markActionFailure, markActionSuccess } from "./actionQueueRepo";
+import { fetchPendingActions, markActionFailure, markActionSuccess, recordActionAttempt } from "./actionQueueRepo";
 import { runWithExecutor } from "./actionExecutors";
 import { QueuedAction } from "./types";
 
 const ACTION_BATCH_LIMIT = 10;
 const WORKER_INTERVAL_MS = 5_000;
+const MAX_ACTION_ATTEMPTS = 3;
 
 export function startActionWorker(): () => void {
   let isRunning = false;
@@ -35,12 +36,21 @@ export function startActionWorker(): () => void {
 
 export async function processPendingActions(): Promise<void> {
   const pending = await fetchPendingActions(ACTION_BATCH_LIMIT);
+  if (pending.length === 0) {
+    return;
+  }
+
   for (const action of pending) {
     await handleAction(action);
   }
 }
 
 async function handleAction(action: QueuedAction): Promise<void> {
+  if (action.attempts >= MAX_ACTION_ATTEMPTS) {
+    await markActionFailure(action.id, action.attempts, "Retry limit exceeded");
+    return;
+  }
+
   const attempts = action.attempts + 1;
 
   try {
@@ -48,10 +58,19 @@ async function handleAction(action: QueuedAction): Promise<void> {
     if (result.success) {
       await markActionSuccess(action.id, attempts);
     } else {
-      await markActionFailure(action.id, attempts, result.errorMessage ?? "Execution failed");
+      await handleExecutionFailure(action.id, attempts, result.errorMessage ?? "Execution failed");
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown execution error";
-    await markActionFailure(action.id, attempts, message);
+    await handleExecutionFailure(action.id, attempts, message);
   }
+}
+
+async function handleExecutionFailure(actionId: number, attempts: number, message: string): Promise<void> {
+  if (attempts >= MAX_ACTION_ATTEMPTS) {
+    await markActionFailure(actionId, attempts, message);
+    return;
+  }
+
+  await recordActionAttempt(actionId, attempts, message);
 }

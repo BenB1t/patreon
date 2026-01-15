@@ -73,3 +73,12 @@ export async function markActionFailure(actionId: number, attempts: number, erro
     [actionId, attempts, errorMessage]
   );
 }
+
+export async function recordActionAttempt(actionId: number, attempts: number, errorMessage: string): Promise<void> {
+  await pool.query(
+    `UPDATE action_queue
+     SET attempts = $2, last_error = $3, updated_at = NOW()
+     WHERE id = $1`,
+    [actionId, attempts, errorMessage]
+  );
+}

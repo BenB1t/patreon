@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailExecutor = void 0;
+const sendgridEmail_1 = require("../email/sendgridEmail");
 function validatePayload(payload) {
     if (typeof payload !== "object" || payload === null) {
         return false;
@@ -11,7 +12,6 @@ function validatePayload(payload) {
         typeof candidate.subject === "string" &&
         typeof candidate.body === "string");
 }
-// Placeholder executor keeps provider-specific code isolated for future integrations.
 class EmailExecutor {
     actionType = "SEND_EMAIL";
     async execute(action) {
@@ -21,13 +21,21 @@ class EmailExecutor {
                 errorMessage: "Invalid email payload",
             };
         }
-        console.info("[EmailExecutor] sending email", {
-            actionId: action.id,
-            to: action.payload.email,
-            subject: action.payload.subject,
-            metadata: action.payload.metadata,
-        });
-        return { success: true };
+        try {
+            await (0, sendgridEmail_1.sendEmail)({
+                to: action.payload.email,
+                subject: action.payload.subject,
+                text: action.payload.body,
+            });
+            return { success: true };
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : "Unknown email failure";
+            return {
+                success: false,
+                errorMessage: message,
+            };
+        }
     }
 }
 exports.EmailExecutor = EmailExecutor;

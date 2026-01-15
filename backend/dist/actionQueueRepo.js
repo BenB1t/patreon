@@ -7,6 +7,7 @@ exports.enqueueAction = enqueueAction;
 exports.fetchPendingActions = fetchPendingActions;
 exports.markActionSuccess = markActionSuccess;
 exports.markActionFailure = markActionFailure;
+exports.recordActionAttempt = recordActionAttempt;
 const db_1 = __importDefault(require("./db"));
 function mapRow(row) {
     return {
@@ -46,6 +47,11 @@ async function markActionSuccess(actionId, attempts) {
 async function markActionFailure(actionId, attempts, errorMessage) {
     await db_1.default.query(`UPDATE action_queue
      SET status = 'failed', attempts = $2, last_error = $3, updated_at = NOW()
+     WHERE id = $1`, [actionId, attempts, errorMessage]);
+}
+async function recordActionAttempt(actionId, attempts, errorMessage) {
+    await db_1.default.query(`UPDATE action_queue
+     SET attempts = $2, last_error = $3, updated_at = NOW()
      WHERE id = $1`, [actionId, attempts, errorMessage]);
 }
 //# sourceMappingURL=actionQueueRepo.js.map

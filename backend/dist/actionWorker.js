@@ -6,6 +6,7 @@ const actionQueueRepo_1 = require("./actionQueueRepo");
 const actionExecutors_1 = require("./actionExecutors");
 const ACTION_BATCH_LIMIT = 10;
 const WORKER_INTERVAL_MS = 5_000;
+const MAX_ACTION_ATTEMPTS = 3;
 function startActionWorker() {
     let isRunning = false;
     const tick = async () => {
@@ -33,11 +34,18 @@ function startActionWorker() {
 }
 async function processPendingActions() {
     const pending = await (0, actionQueueRepo_1.fetchPendingActions)(ACTION_BATCH_LIMIT);
+    if (pending.length === 0) {
+        return;
+    }
     for (const action of pending) {
         await handleAction(action);
     }
 }
 async function handleAction(action) {
+    if (action.attempts >= MAX_ACTION_ATTEMPTS) {
+        await (0, actionQueueRepo_1.markActionFailure)(action.id, action.attempts, "Retry limit exceeded");
+        return;
+    }
     const attempts = action.attempts + 1;
     try {
         const result = await (0, actionExecutors_1.runWithExecutor)(action);
@@ -45,12 +53,19 @@ async function handleAction(action) {
             await (0, actionQueueRepo_1.markActionSuccess)(action.id, attempts);
         }
         else {
-            await (0, actionQueueRepo_1.markActionFailure)(action.id, attempts, result.errorMessage ?? "Execution failed");
+            await handleExecutionFailure(action.id, attempts, result.errorMessage ?? "Execution failed");
         }
     }
     catch (error) {
         const message = error instanceof Error ? error.message : "Unknown execution error";
-        await (0, actionQueueRepo_1.markActionFailure)(action.id, attempts, message);
+        await handleExecutionFailure(action.id, attempts, message);
     }
+}
+async function handleExecutionFailure(actionId, attempts, message) {
+    if (attempts >= MAX_ACTION_ATTEMPTS) {
+        await (0, actionQueueRepo_1.markActionFailure)(actionId, attempts, message);
+        return;
+    }
+    await (0, actionQueueRepo_1.recordActionAttempt)(actionId, attempts, message);
 }
 //# sourceMappingURL=actionWorker.js.map

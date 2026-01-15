@@ -17,10 +17,8 @@ async function sendEmail(input) {
         to: input.to,
         from: sender,
         subject: input.subject,
+        text: input.text ?? " ",
     };
-    if (typeof input.text === "string") {
-        message.text = input.text;
-    }
     if (typeof input.html === "string") {
         message.html = input.html;
     }
