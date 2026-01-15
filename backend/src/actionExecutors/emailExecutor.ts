@@ -1,3 +1,4 @@
+import { sendEmail } from "../email/sendgridEmail";
 import { ActionExecutionResult, ActionQueueExecutor, EmailActionPayload, QueuedAction } from "../types";
 
 function validatePayload(payload: unknown): payload is EmailActionPayload {
@@ -14,7 +15,6 @@ function validatePayload(payload: unknown): payload is EmailActionPayload {
   );
 }
 
-// Placeholder executor keeps provider-specific code isolated for future integrations.
 export class EmailExecutor implements ActionQueueExecutor {
   public readonly actionType = "SEND_EMAIL";
 
@@ -26,13 +26,19 @@ export class EmailExecutor implements ActionQueueExecutor {
       };
     }
 
-    console.info("[EmailExecutor] sending email", {
-      actionId: action.id,
-      to: action.payload.email,
-      subject: action.payload.subject,
-      metadata: action.payload.metadata,
-    });
-
-    return { success: true };
+    try {
+      await sendEmail({
+        to: action.payload.email,
+        subject: action.payload.subject,
+        text: action.payload.body,
+      });
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown email failure";
+      return {
+        success: false,
+        errorMessage: message,
+      };
+    }
   }
 }
