@@ -1,5 +1,5 @@
 import { fetchPendingActions, markActionFailure, markActionSuccess, recordActionAttempt } from "./actionQueueRepo";
-import { runWithExecutor } from "./actionExecutors";
+import * as actionExecutors from "./actionExecutors";
 import { QueuedAction } from "./types";
 
 const ACTION_BATCH_LIMIT = 10;
@@ -54,7 +54,7 @@ async function handleAction(action: QueuedAction): Promise<void> {
   const attempts = action.attempts + 1;
 
   try {
-    const result = await runWithExecutor(action);
+    const result = await actionExecutors.runWithExecutor(action);
     if (result.success) {
       await markActionSuccess(action.id, attempts);
     } else {
